@@ -1,0 +1,21 @@
+# API
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+pydantic-settings==2.16.3
+
+# Banco de dados
+SQLAlchemy==2.1.9
+PyMySQL==1.2.4
+# o MySQL 8 usa autenticação caching_sha2_password, que o PyMySQL só suporta com esta lib
+cryptography==50.0.1
+
+# Segurança (hash de senha e token de login)
+bcrypt==5.0.0
+PyJWT==2.15.0
+
+# Fuso horário: no Windows o Python não traz a base de fusos, esta lib fornece
+tzdata==2026.6
+
+# Testes
+pytest==9.1.1
+httpx==0.28.1
