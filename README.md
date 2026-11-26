@@ -4,9 +4,16 @@ Projeto final da disciplina **Back End Frameworks** (UNINASSAU, 2026.2, Prof. Ed
 API REST de senhas e filas (SP, SG e SE) para um laboratório, conforme o documento
 "Sistema para controle de atendimento" v06 (Prof. João Ferreira), que está em [`docs/`](docs/).
 
-Front end (React): repositório `controle-atendimento-front` _(colocar o link)_.
+Front end (React): https://github.com/Dev-Juanvictor/controle-atendimento-front
 
-**Equipe:** _(preencher: nome e matrícula de cada integrante)_
+**Equipe:** Nexos
+
+| Nome | Matrícula | Parte na apresentação |
+|---|---|---|
+| Juan Victor | 01822560 | Visão geral, arquitetura e encerramento |
+| Lucas Paes | 01809638 | Fluxo completo e cenário de falha |
+| Victor Daniel | 01821043 | Alternância e concorrência |
+| Rafael Sales | 01780786 | Relatórios, auditoria, segurança e LGPD |
 
 ---
 
