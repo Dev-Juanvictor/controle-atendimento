@@ -1,4 +1,5 @@
-# CI: a cada push, o GitHub instala as dependências e confere se o projeto compila.
+# CI: a cada push ou pull request, o GitHub instala as dependências e roda os testes.
+# Resultado na aba "Actions" do repositório.
 name: CI
 
 on:
@@ -6,18 +7,18 @@ on:
   pull_request:
 
 jobs:
-  build:
+  testes:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 22
-          cache: npm
+          python-version: "3.14"
+          cache: pip
 
       - name: Instalar dependências
-        run: npm ci
+        run: pip install -r requirements.txt
 
-      - name: Compilar
-        run: npm run build
+      - name: Rodar os testes
+        run: pytest -v
