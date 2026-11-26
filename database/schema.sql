@@ -43,6 +43,18 @@ CREATE TABLE usuarios (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
+CREATE TABLE registros_acesso (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	usuario_id INTEGER, 
+	evento VARCHAR(40) NOT NULL, 
+	detalhe VARCHAR(200), 
+	ocorrido_em DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(usuario_id) REFERENCES usuarios (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX ix_acesso_data ON registros_acesso (ocorrido_em);
+
 CREATE TABLE senhas (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	numero VARCHAR(12) NOT NULL, 

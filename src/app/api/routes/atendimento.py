@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import Sessao, sessao_com_guiche, somente_gestor
 from app.database import get_db
 from app.schemas import EncerrarExpedienteResponse, SenhaGuicheResponse
+from app.services import acesso_service
 from app.services import atendimento_service as servico
 
 router = APIRouter(prefix="/atendimentos", tags=["Atendimento (atendente)"])
@@ -45,4 +46,6 @@ expediente_router = APIRouter(prefix="/expediente", tags=["Gestor"])
 @expediente_router.post("/encerrar", response_model=EncerrarExpedienteResponse,
                         summary="Encerrar expediente e descartar senhas restantes")
 def encerrar_expediente(s: Sessao = Depends(somente_gestor), db: Session = Depends(get_db)):
-    return EncerrarExpedienteResponse(senhas_descartadas=servico.encerrar_expediente(db, s.usuario.id))
+    descartadas = servico.encerrar_expediente(db, s.usuario.id)
+    acesso_service.registrar(db, s.usuario.id, "ENCERRAR_EXPEDIENTE", f"{descartadas} senha(s) descartada(s)")
+    return EncerrarExpedienteResponse(senhas_descartadas=descartadas)

@@ -4,6 +4,8 @@ Projeto final da disciplina **Back End Frameworks** (UNINASSAU, 2026.2, Prof. Ed
 API REST de senhas e filas (SP, SG e SE) para um laboratório, conforme o documento
 "Sistema para controle de atendimento" v06 (Prof. João Ferreira), que está em [`docs/`](docs/).
 
+Front end (React): repositório `controle-atendimento-front` _(colocar o link)_.
+
 **Equipe:** _(preencher: nome e matrícula de cada integrante)_
 
 ---
@@ -64,6 +66,8 @@ docker compose up -d mysql
 ```
 Na primeira vez, o MySQL cria as tabelas (`database/schema.sql`) e os dados de teste
 (`database/seed.sql`) sozinho. Para zerar tudo: `docker compose down -v`.
+Se o banco foi criado com uma versão anterior do projeto, a API cria sozinha as tabelas que
+faltarem ao iniciar.
 
 **Opção B: MySQL instalado na máquina**
 ```powershell
@@ -98,7 +102,11 @@ docker compose up -d --build
 | `atendente2` | `atendente123` | ATENDENTE |
 | `atendente3` | `atendente123` | ATENDENTE |
 
-Guichês cadastrados: 1 a 5.
+Guichês cadastrados: 1 a 5. O gestor pode cadastrar outros atendentes e guichês.
+
+**Para ter dados nos relatórios:** entre como `gestor`, vá em **Relatórios → Simular um dia**
+(ou `POST /api/v1/simulacao` com `{"dia": "2026-11-25", "quantidade": 150}`) e depois gere o
+relatório daquele dia.
 
 **Testando pelo Swagger:**
 1. `POST /api/v1/senhas` com `{"tipo": "SP"}` (repita com SG e SE).
@@ -106,13 +114,18 @@ Guichês cadastrados: 1 a 5.
 3. Copie o `access_token`, clique em **Authorize** (cadeado) e cole.
 4. `POST /api/v1/atendimentos/chamar-proxima`, depois `iniciar` e `encerrar`.
 5. `GET /api/v1/painel` mostra as 5 últimas chamadas.
+6. Entre como `gestor` (sem `guiche_id`) e chame `GET /api/v1/relatorios/diario`.
 
 ## Como rodar os testes
 
 ```powershell
 pytest -v
 ```
-Não precisa do MySQL ligado: os testes criam um banco SQLite temporário.
+Não precisa do MySQL ligado: os testes criam um banco SQLite temporário. São 47 testes:
+regras puras da fila, fluxo completo pela API, concorrência com threads, relatórios,
+simulação, cadastros e registro de acesso.
+
+O GitHub roda os mesmos testes a cada `push` (aba **Actions**, arquivo `.github/workflows/ci.yml`).
 
 ---
 
@@ -130,6 +143,14 @@ Não precisa do MySQL ligado: os testes criam um banco SQLite temporário.
 | POST | `/api/v1/atendimentos/iniciar` | Atendente | Cliente chegou |
 | POST | `/api/v1/atendimentos/encerrar` | Atendente | Fim do atendimento |
 | POST | `/api/v1/expediente/encerrar` | Gestor | Descarta as senhas que sobraram |
+| GET | `/api/v1/relatorios/diario?data=AAAA-MM-DD` | Gestor | Relatório do dia: quantitativos, TM, detalhado, auditoria, indicadores |
+| GET | `/api/v1/relatorios/mensal?ano=AAAA&mes=MM` | Gestor | O mesmo relatório para o mês inteiro |
+| POST | `/api/v1/simulacao` | Gestor | Simula um dia passado (TM sorteado, ~5% não atendidas) |
+| GET/POST | `/api/v1/usuarios` | Gestor | Lista / cadastra atendentes |
+| PATCH | `/api/v1/usuarios/{id}` | Gestor | Ativa ou desativa um usuário |
+| GET | `/api/v1/guiches` | Público | Lista os guichês (usado na tela de login) |
+| POST/PATCH | `/api/v1/guiches` | Gestor | Cadastra / ativa ou desativa guichê |
+| GET | `/api/v1/acessos` | Gestor | Registro de acesso (LGPD) |
 | GET | `/health` | Front/Docker | API e banco estão no ar? |
 
 ---
@@ -147,8 +168,11 @@ src/app/
 ├── schemas.py           # formato de entrada/saída da API
 ├── seed.py              # dados de teste
 ├── core/                # erros padronizados, segurança (bcrypt/JWT), relógio
-├── domain/regras_fila.py# regras puras: numeração, alternância, estados, expediente
-├── services/            # casos de uso: emitir, chamar, atender, login, painel
+├── domain/
+│   ├── regras_fila.py   # regras puras: numeração, alternância, estados, expediente
+│   └── simulacao.py     # regras puras da simulação: TM sorteado e 5% de desistência
+├── services/            # casos de uso: emitir, chamar, atender, login, painel,
+│                        #   relatórios, simulação, cadastros, registro de acesso
 └── api/                 # rotas HTTP (sem regra de negócio) e dependências de login
 ```
 
@@ -159,8 +183,48 @@ src/app/
   `SP -> SE -> SG` também está pronto (`MODO_ALTERNANCIA=CICLO`).
 - **Erros padronizados:** toda resposta de erro tem o formato
   `{"erro": {"codigo": "...", "mensagem": "..."}}`.
+- **Relatórios:** calculados na hora a partir das senhas, que já guardam os 5 horários,
+  o guichê e o atendente (ADR-09).
+- **Simulação:** o TM e os 5% de desistência são sorteados por funções puras e o dia é "rodado"
+  com a mesma alternância e a mesma máquina de estados do sistema real (ADR-10).
+
+Requisitos funcionais, não funcionais e regras de negócio, cada um com o lugar do código que o
+atende: [`docs/requisitos.md`](docs/requisitos.md). LGPD e acessibilidade:
+[`docs/lgpd-e-acessibilidade.md`](docs/lgpd-e-acessibilidade.md).
 
 ## Diagramas
+
+### Casos de uso
+```mermaid
+flowchart LR
+    AC((Cliente))
+    AA((Atendente))
+    G((Gestor))
+    subgraph SIS [Sistema de Controle de Atendimento]
+        UC01([Emitir senha no totem])
+        UC02([Acompanhar o painel])
+        UC03([Entrar no guichê])
+        UC04([Chamar próxima / chamar novamente])
+        UC05([Iniciar e encerrar atendimento])
+        UC06([Encerrar expediente])
+        UC07([Ver relatórios, auditoria e indicadores])
+        UC08([Simular dia de atendimento])
+        UC09([Cadastrar atendentes e guichês])
+        UC10([Consultar registro de acesso])
+    end
+    AC --- UC01
+    AC --- UC02
+    AA --- UC03
+    AA --- UC04
+    AA --- UC05
+    G --- UC06
+    G --- UC07
+    G --- UC08
+    G --- UC09
+    G --- UC10
+    G -. também atende .-> AA
+```
+Descrição de cada caso de uso: [`docs/requisitos.md`](docs/requisitos.md#casos-de-uso).
 
 ### Máquina de estados da senha
 ```mermaid
@@ -187,6 +251,7 @@ erDiagram
     SENHAS ||--o{ HISTORICO_ESTADOS : registra
     USUARIOS ||--o{ HISTORICO_ESTADOS : executa
     GUICHES ||--o{ HISTORICO_ESTADOS : em
+    USUARIOS ||--o{ REGISTROS_ACESSO : gera
     USUARIOS {
         int id PK
         string login UK
@@ -229,6 +294,13 @@ erDiagram
         string ultimo_tipo_chamado
         date data_referencia
     }
+    REGISTROS_ACESSO {
+        int id PK
+        int usuario_id FK
+        string evento
+        string detalhe
+        datetime ocorrido_em
+    }
 ```
 
 ### Sequência: chamar próxima (com concorrência)
@@ -250,7 +322,6 @@ sequenceDiagram
     API-->>A2: 261127-SE001, guichê 2
 ```
 
-_(Falta: diagrama de casos de uso; ver lista abaixo.)_
 
 ---
 
@@ -267,18 +338,22 @@ _(Falta: diagrama de casos de uso; ver lista abaixo.)_
 - [x] Painel com as 5 últimas chamadas (com indicação de "última chamada" para o áudio)
 - [x] Concorrência sem senha duplicada (testada com threads)
 - [x] Login com bcrypt + JWT, perfis ATENDENTE e GESTOR
-- [x] Erros padronizados, health check, tratamento de banco fora do ar (503)
-- [x] Swagger automático, testes automatizados, Docker Compose
+- [x] Relatórios diário e mensal: emitidas e atendidas (geral e por tipo), detalhado por senha, TM
+- [x] Relatório de auditoria (atendente, guichê, senha, 1ª e 2ª chamada, início e fim)
+- [x] Indicadores: espera média, duração média, taxa de atendimento e de não comparecimento, por guichê e por atendente
+- [x] Simulação do TM (SP 15±5, SG 5±3, SE 1/5 min) e dos ~5% de senhas não atendidas
+- [x] Cadastro de atendentes e guichês pelo gestor (criar, ativar, desativar)
+- [x] Registro de acesso (LGPD) e logs estruturados em JSON
+- [x] Erros padronizados, health check, banco fora do ar (503), reconexão automática
+- [x] Backup e restauração do banco por script
+- [x] Swagger automático, 47 testes automatizados, CI no GitHub Actions, Docker Compose
+- [x] Front end em React integrado (repositório `controle-atendimento-front`)
 
-**Pendentes**
-- [ ] Relatórios diários e mensais (emitidas/atendidas, por tipo, detalhado, TM)
-- [ ] Relatório de auditoria
-- [ ] Indicadores de desempenho (tempo de espera, taxa de não comparecimento, por guichê)
-- [ ] Simulação do TM (SP 15±5, SG 5±3, SE 1/5 min) e dos 5% de senhas não atendidas
-- [ ] Cadastro de atendentes e guichês pelo gestor
-- [ ] Documento de LGPD e acessibilidade
-- [ ] Diagrama de casos de uso
-- [ ] CORS para o front end, logs estruturados, CI
+**Não implementadas (melhorias futuras)**
+- [ ] Encerramento automático do expediente às 17h (hoje o gestor clica em "Encerrar expediente")
+- [ ] Exportar relatórios em PDF ou planilha (hoje: tela, impressão pelo navegador e JSON da API)
+- [ ] Troca de senha pelo próprio atendente
+- [ ] Publicação em servidor com HTTPS
 
 ---
 
@@ -297,9 +372,29 @@ _(Falta: diagrama de casos de uso; ver lista abaixo.)_
 
 ---
 
+## Disponibilidade e recuperação de falhas
+
+| Falha | O que acontece | O que o front mostra |
+|---|---|---|
+| MySQL cai | A API responde `503 BANCO_INDISPONIVEL`; `/health` mostra `degradado` | Painel: "Sistema fora do ar" e continua com as últimas senhas. Totem e guichê: mensagem de indisponível |
+| MySQL volta | A API reconecta sozinha (`pool_pre_ping`) | Tudo volta em poucos segundos, sem recarregar a página |
+| API cai | Nada responde | Painel: "Sistema fora do ar" com as últimas senhas; demais telas: "Sem conexão com o sistema" |
+| Perda de dados | Restaurar o último backup | — |
+
+**Backup** (com o MySQL no Docker):
+```powershell
+.\scripts\backup.ps1                                     # cria backups\backup-AAAAMMDD-HHMM.sql
+.\scripts\restaurar.ps1 backups\backup-20261127-1700.sql  # volta um backup
+```
+Rotina sugerida: um backup por dia, no fim do expediente. A pasta `backups/` não vai para o GitHub.
+
+**Logs:** cada requisição gera uma linha JSON no terminal da API (método, rota, status, tempo),
+sem dados pessoais.
+
+---
+
 ## Uso de IA generativa
 
-_(O edital exige declarar.)_ Usamos o Claude (Anthropic) como apoio para montar a estrutura
-inicial do projeto, as regras da fila e os testes. Todo o código foi revisado pela equipe, e
-cada integrante sabe explicar as partes do projeto. _(Ajustar este texto com o que o grupo
-realmente fez.)_
+Usamos o Claude (Anthropic) como ferramenta de apoio na estrutura do projeto, no código,
+nos testes e na documentação. Todo o código foi revisado e testado pela equipe, e cada
+integrante sabe explicar as partes do projeto.

@@ -142,3 +142,21 @@ class ControleFila(Base):
     ultimo_tipo_chamado: Mapped[TipoSenha | None] = mapped_column(_enum(TipoSenha, "ck_controle_tipo"), nullable=True)
     data_referencia: Mapped[date | None] = mapped_column(Date, nullable=True)
     atualizado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RegistroAcesso(Base):
+    """Registro de acesso (LGPD): quem fez login, quem viu relatório, quem cadastrou.
+
+    Guarda só o necessário: o usuário, o evento e a hora. Nunca guarda senha.
+    """
+    __tablename__ = "registros_acesso"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    evento: Mapped[str] = mapped_column(String(40))  # ex.: LOGIN, LOGIN_RECUSADO, RELATORIO
+    detalhe: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    ocorrido_em: Mapped[datetime] = mapped_column(DateTime)
+
+    usuario: Mapped[Usuario | None] = relationship()
+
+    __table_args__ = (Index("ix_acesso_data", "ocorrido_em"),)

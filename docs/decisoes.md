@@ -94,3 +94,49 @@ AGUARDANDO | CHAMADA | CHAMADA_NOVAMENTE -> NAO_COMPARECEU   (descarte no fim do
 - Dados pessoais existem só para os funcionários (nome e login) e a senha deles é guardada
   com hash bcrypt.
 - O histórico de estados registra quem (usuário) fez cada ação e quando (registro de acesso).
+- Além disso, a tabela `registros_acesso` grava logins (aceitos e recusados), relatórios,
+  cadastros e simulações. Detalhes em [`lgpd-e-acessibilidade.md`](lgpd-e-acessibilidade.md).
+
+## ADR-09 · Relatórios calculados na hora
+
+- **Decisão:** não existe tabela de relatório. `relatorio_service.gerar` lê as senhas do período e
+  calcula tudo: quantitativos, TM por tipo, relatório detalhado, auditoria e indicadores.
+- **Por quê:** a senha já guarda os 5 horários (emissão, 1ª e 2ª chamada, início e fim),
+  o guichê e o atendente. Uma tabela de relatório repetiria esses dados e poderia ficar
+  desatualizada. O mesmo código serve para o dia e para o mês: só muda o período.
+- **Indicadores escolhidos:** espera média (emissão até a 1ª chamada), duração média do
+  atendimento, taxa de atendimento, taxa de não comparecimento e atendimentos/TM por guichê
+  e por atendente.
+
+## ADR-10 · Simulação do TM e dos 5% não atendidos
+
+- **Problema:** o requisito pede o TM simulado (SP 15±5, SG 5±3, SE 1 ou 5 min) e que ~5% das
+  senhas não sejam atendidas. Num sistema real, o tempo de atendimento é o que acontece no
+  guichê; para os relatórios fazerem sentido em sala, precisamos de dados de um dia inteiro.
+- **Decisão:** o gestor simula um dia que **já passou** (`POST /api/v1/simulacao`). As regras
+  sorteadas ficam em `domain/simulacao.py` (funções puras, testadas), e o dia é "rodado" com a
+  **mesma** alternância e a **mesma** máquina de estados do sistema real.
+- **Leituras do requisito que escolhemos:**
+  - "varia 5 min para baixo ou para cima, em igual distribuição": sorteio uniforme entre
+    10 e 20 min (SP) e entre 2 e 8 min (SG);
+  - SE: 1 min com 95% de chance e 5 min com 5%;
+  - o cliente que desiste é chamado 2 vezes (com 2 min entre elas) e vira `NAO_COMPARECEU`;
+  - proporção dos tipos (o requisito não define): 20% SP, 30% SE, 50% SG;
+  - chegadas espalhadas entre 7h e 16h30; o que sobrar às 17h é descartado.
+- **Por que só dias passados:** o dia de hoje é do atendimento real; misturar dados simulados
+  com os reais embaralharia a numeração e os relatórios.
+
+## ADR-11 · Disponibilidade, backup e observabilidade
+
+- **Banco fora do ar:** a API responde `503 BANCO_INDISPONIVEL` (não "quebra"), o `/health`
+  mostra `degradado`, e o `pool_pre_ping` reconecta sozinho quando o MySQL volta. O painel
+  avisa e continua mostrando as últimas senhas (guardadas no navegador).
+- **Backup:** `scripts/backup.ps1` gera um `mysqldump` em `backups/` (fora do Git) e
+  `scripts/restaurar.ps1` volta um backup. Sugestão de rotina: um backup por dia, no fim do
+  expediente, guardando os últimos 30.
+- **Tabelas que faltam:** ao iniciar, a API cria as tabelas que ainda não existem
+  (`Base.metadata.create_all`), sem mexer nas existentes. Assim um banco criado com uma versão
+  anterior do `schema.sql` continua funcionando.
+- **Logs estruturados:** cada requisição gera uma linha JSON com método, rota, status e tempo
+  (sem dados pessoais).
+- **CI:** o GitHub Actions roda todos os testes a cada `push` (`.github/workflows/ci.yml`).
